@@ -1,7 +1,32 @@
 //! Configuration for the unified processor
+//!
+//! All configuration is env-only (`.map.env` / `.secret.env`, see
+//! `.cline/rules/env-policy.md`) — required vars fail fast, optional features
+//! read `.ok()` with no literal fallback.
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
+/// Required string env var (fail fast, naming the variable).
+fn req(name: &str) -> Result<String, String> {
+    std::env::var(name).map_err(|_| format!("Missing required environment variable: {name}"))
+}
+
+/// Required env var parsed into `T`.
+fn req_parse<T: std::str::FromStr>(name: &str) -> Result<T, String> {
+    req(name)?
+        .parse::<T>()
+        .map_err(|_| format!("Invalid value for environment variable: {name}"))
+}
+
+/// Required boolean env var (`true`/`false`/`1`/`0`).
+fn req_bool(name: &str) -> Result<bool, String> {
+    match req(name)?.to_lowercase().as_str() {
+        "true" | "1" => Ok(true),
+        "false" | "0" => Ok(false),
+        other => Err(format!("Invalid boolean for environment variable {name}: {other}")),
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -30,12 +55,8 @@ pub struct DatabaseConfig {
 impl DatabaseConfig {
     pub fn from_env() -> Result<Self, String> {
         Ok(Self {
-            database_url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgresql://user:password@localhost:5432/dbname".to_string()),
-            max_connections: std::env::var("DB_MAX_CONNECTIONS")
-                .unwrap_or_else(|_| "10".to_string())
-                .parse()
-                .unwrap_or(10),
+            database_url: req("DATABASE_URL")?,
+            max_connections: req_parse("DB_MAX_CONNECTIONS")?,
         })
     }
 }
@@ -65,28 +86,14 @@ pub struct FalkordbConfig {
 impl FalkordbConfig {
     pub fn from_env() -> Result<Self, String> {
         Ok(Self {
-            host: std::env::var("FALKORDB_HOST")
-                .unwrap_or_else(|_| "localhost".to_string()),
-            port: std::env::var("FALKORDB_PORT")
-                .unwrap_or_else(|_| "50860".to_string())
-                .parse()
-                .unwrap_or(50860),
-            username: std::env::var("FALKORDB_USERNAME")
-                .unwrap_or_else(|_| "falkordb".to_string()),
-            password: std::env::var("FALKORDB_PASSWORD")
-                .ok()
-                .or_else(|| Some("adminconfuse".to_string())),
-            use_tls: std::env::var("FALKORDB_USE_TLS")
-                .map(|v| v.to_lowercase() == "true" || v == "1")
-                .unwrap_or(false), // Default to false for plaintext endpoints
-            embedding_dim: std::env::var("FALKORDB_EMBEDDING_DIM")
-                .unwrap_or_else(|_| "1536".to_string())
-                .parse()
-                .unwrap_or(1536),
-            timeout_secs: std::env::var("FALKORDB_TIMEOUT_SECS")
-                .unwrap_or_else(|_| "30".to_string())
-                .parse()
-                .unwrap_or(30),
+            host: req("FALKORDB_HOST")?,
+            port: req_parse("FALKORDB_PORT")?,
+            username: req("FALKORDB_USERNAME")?,
+            // Optional: FalkorDB endpoints without auth run without a password.
+            password: std::env::var("FALKORDB_PASSWORD").ok().filter(|v| !v.is_empty()),
+            use_tls: req_bool("FALKORDB_USE_TLS")?,
+            embedding_dim: req_parse("FALKORDB_EMBEDDING_DIM")?,
+            timeout_secs: req_parse("FALKORDB_TIMEOUT_SECS")?,
         })
     }
 }
@@ -112,32 +119,13 @@ pub struct WebConfig {
 impl WebConfig {
     pub fn from_env() -> Result<Self, String> {
         Ok(Self {
-            enabled: std::env::var("WEB_SCRAPING_ENABLED")
-                .unwrap_or_else(|_| "true".to_string())
-                .parse()
-                .unwrap_or(true),
-            max_pages: std::env::var("WEB_MAX_PAGES")
-                .unwrap_or_else(|_| "50".to_string())
-                .parse()
-                .unwrap_or(50),
-            max_depth: std::env::var("WEB_MAX_DEPTH")
-                .unwrap_or_else(|_| "3".to_string())
-                .parse()
-                .unwrap_or(3),
-            crawl_delay_ms: std::env::var("WEB_CRAWL_DELAY_MS")
-                .unwrap_or_else(|_| "1000".to_string())
-                .parse()
-                .unwrap_or(1000),
-            user_agent: std::env::var("WEB_USER_AGENT")
-                .unwrap_or_else(|_| "UnifiedProcessorBot/1.0".to_string()),
-            request_timeout_secs: std::env::var("WEB_REQUEST_TIMEOUT_SECS")
-                .unwrap_or_else(|_| "30".to_string())
-                .parse()
-                .unwrap_or(30),
-            max_concurrent_crawls: std::env::var("WEB_MAX_CONCURRENT_CRAWLS")
-                .unwrap_or_else(|_| "5".to_string())
-                .parse()
-                .unwrap_or(5),
+            enabled: req_bool("WEB_SCRAPING_ENABLED")?,
+            max_pages: req_parse("WEB_MAX_PAGES")?,
+            max_depth: req_parse("WEB_MAX_DEPTH")?,
+            crawl_delay_ms: req_parse("WEB_CRAWL_DELAY_MS")?,
+            user_agent: req("WEB_USER_AGENT")?,
+            request_timeout_secs: req_parse("WEB_REQUEST_TIMEOUT_SECS")?,
+            max_concurrent_crawls: req_parse("WEB_MAX_CONCURRENT_CRAWLS")?,
         })
     }
 }
@@ -154,18 +142,11 @@ pub struct KafkaConfig {
 impl KafkaConfig {
     pub fn from_env() -> Result<Self, String> {
         Ok(Self {
-            bootstrap_servers: std::env::var("KAFKA_BOOTSTRAP_SERVERS")
-                .unwrap_or_else(|_| "localhost:9092".to_string()),
-            group_id: std::env::var("REPO_UNI_PROC_KAFKA_GROUP_ID")
-                .unwrap_or_else(|_| "repo-uni-proc-group".to_string()),
-            client_id: std::env::var("KAFKA_CLIENT_ID")
-                .unwrap_or_else(|_| "unified-processor".to_string()),
-            auto_offset_reset: std::env::var("KAFKA_AUTO_OFFSET_RESET")
-                .unwrap_or_else(|_| "earliest".to_string()),
-            enable_auto_commit: std::env::var("KAFKA_ENABLE_AUTO_COMMIT")
-                .unwrap_or_else(|_| "true".to_string())
-                .parse()
-                .unwrap_or(true),
+            bootstrap_servers: req("KAFKA_BOOTSTRAP_SERVERS")?,
+            group_id: req("REPO_UNI_PROC_KAFKA_GROUP_ID")?,
+            client_id: req("KAFKA_CLIENT_ID")?,
+            auto_offset_reset: req("KAFKA_AUTO_OFFSET_RESET")?,
+            enable_auto_commit: req_bool("KAFKA_ENABLE_AUTO_COMMIT")?,
         })
     }
 }
@@ -174,39 +155,26 @@ impl KafkaConfig {
 
 impl Config {
     pub fn from_env() -> crate::core::Result<Self> {
-        let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-        let port = std::env::var("PORT")
-            .unwrap_or_else(|_| "8090".to_string())
-            .parse::<u16>()
-            .unwrap_or(8090);
+        let map_err = crate::core::error::ProcessorError::ConfigError;
 
-        let auth_middleware_url = std::env::var("AUTH_MIDDLEWARE_URL")
-            .unwrap_or_else(|_| "http://auth-middleware:3010".to_string());
-        let workers = std::env::var("WORKERS")
-            .unwrap_or_else(|_| "4".to_string())
+        let host = req("HOST").map_err(map_err)?;
+        // PORT may arrive under deploy-platform aliases — all env, no literals.
+        let port: u16 = req("PORT")
+            .or_else(|_| req("REPO_UNI_PROC_PORT"))
+            .or_else(|_| req("HTTP_PORT"))
+            .map_err(map_err)?
             .parse()
-            .unwrap_or(4);
+            .map_err(|_| map_err("Invalid value for environment variable: PORT".to_string()))?;
+
+        let auth_middleware_url = req("AUTH_MIDDLEWARE_URL").map_err(map_err)?;
+        let workers = req_parse("WORKERS").map_err(map_err)?;
 
         // Pipeline Config
         let pipeline = PipelineConfig {
-            max_file_size: std::env::var("PIPELINE_MAX_FILE_SIZE")
-                .unwrap_or_else(|_| "10485760".to_string())
-                .parse()
-                .unwrap_or(10485760),
-            chunk_size: std::env::var("PIPELINE_CHUNK_SIZE")
-                .unwrap_or_else(|_| "1000".to_string())
-                .parse()
-                .unwrap_or(1000),
-            max_batch_size: std::env::var("PIPELINE_MAX_BATCH_SIZE")
-                .unwrap_or_else(|_| "100".to_string())
-                .parse()
-                .unwrap_or(100),
-            timeout: Duration::from_secs(
-                std::env::var("PIPELINE_TIMEOUT_SECS")
-                    .unwrap_or_else(|_| "300".to_string())
-                    .parse()
-                    .unwrap_or(300)
-            ),
+            max_file_size: req_parse("PIPELINE_MAX_FILE_SIZE").map_err(map_err)?,
+            chunk_size: req_parse("PIPELINE_CHUNK_SIZE").map_err(map_err)?,
+            max_batch_size: req_parse("PIPELINE_MAX_BATCH_SIZE").map_err(map_err)?,
+            timeout: Duration::from_secs(req_parse("PIPELINE_TIMEOUT_SECS").map_err(map_err)?),
         };
 
         let database = DatabaseConfig::from_env()

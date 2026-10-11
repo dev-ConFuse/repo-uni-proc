@@ -95,7 +95,7 @@ RUN chown -R appuser:appgroup /app
 # SECURITY: Switch to the non-root user
 USER appuser
 
-ENV PORT=8090
+# PORT is supplied at runtime via .map.env / .secret.env (see .cline/rules/env-policy.md)
 EXPOSE 8090
 
 # Remove health check to minimize dependencies - service monitoring can be external

@@ -48,69 +48,14 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // ── Config ───────────────────────────────────────────────────────────────
-    let config = Config::from_env().unwrap_or_else(|e| {
-        tracing::warn!("Config error, using defaults: {}", e);
-        // Provide minimal default config for Render deployment
-        // IMPORTANT: These defaults will NOT work for actual processing
-        // You MUST set environment variables in Render dashboard
-        Config {
-            server: unified_processor_lib::core::config::ServerConfig {
-                host: "0.0.0.0".to_string(),
-                port: 8090,
-                workers: 4,
-                auth_middleware_url: "http://auth-middleware:3010".to_string(),
-            },
-            database: unified_processor_lib::core::config::DatabaseConfig {
-                database_url: "postgresql://user:password@localhost:5432/dbname".to_string(),
-                max_connections: 20,
-            },
-            pipeline: unified_processor_lib::core::config::PipelineConfig {
-                max_file_size: 10485760,
-                chunk_size: 1000,
-                max_batch_size: 100,
-                timeout: std::time::Duration::from_secs(300),
-            },
-
-            falkordb: unified_processor_lib::core::config::FalkordbConfig {
-                host: "localhost".to_string(),
-                port: 50860,
-                username: "falkordb".to_string(),
-                password: Some("adminconfuse".to_string()),
-                use_tls: false,
-                embedding_dim: 1536,
-                timeout_secs: 30,
-            },
-            kafka: unified_processor_lib::core::config::KafkaConfig {
-                bootstrap_servers: "localhost:9092".to_string(),
-                group_id: "repo-uni-proc-group".to_string(),
-                client_id: "unified-processor".to_string(),
-                auto_offset_reset: "earliest".to_string(),
-                enable_auto_commit: true,
-            },
-            web: unified_processor_lib::core::config::WebConfig {
-                enabled: true,
-                max_pages: 50,
-                max_depth: 3,
-                crawl_delay_ms: 1000,
-                user_agent: "UnifiedProcessorBot/1.0".to_string(),
-                request_timeout_secs: 30,
-                max_concurrent_crawls: 5,
-            },
-        }
-    });
-
-    // Check if we're using default config (indicates missing env vars)
-    if config.database.database_url.contains("localhost") || config.database.database_url.contains("user:password") {
-        tracing::error!("CRITICAL: DATABASE_URL environment variable not set or using default. Please set DATABASE_URL in Render dashboard.");
-        tracing::error!("Service will not function properly without real database connection.");
-        return Err(anyhow::anyhow!("DATABASE_URL environment variable is required for deployment"));
-    }
-
-    if config.falkordb.host == "localhost" {
-        tracing::error!("CRITICAL: FALKORDB_HOST environment variable not set or using default. Please set FALKORDB_HOST in Render dashboard.");
-        tracing::error!("Service will not function properly without real FalkorDB connection.");
-        return Err(anyhow::anyhow!("FALKORDB_HOST environment variable is required for deployment"));
-    }
+    // Fail fast when required env config is missing — values live in
+    // .map.env / .secret.env (no in-code defaults; see .cline/rules/env-policy.md)
+    let config = Config::from_env().map_err(|e| {
+        anyhow::anyhow!(
+            "Missing or invalid required environment configuration (see .map.env / .secret.env): {}",
+            e
+        )
+    })?;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server.port));
 

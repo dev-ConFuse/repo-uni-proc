@@ -19,7 +19,7 @@ mod kafka_impl {
     impl EventProducer {
         pub fn new(bootstrap_servers: &str) -> Result<Self> {
             let enable_idempotence = std::env::var("KAFKA_ENABLE_IDEMPOTENCE")
-                .unwrap_or_else(|_| "true".to_string())
+                .expect("Missing required environment variable: KAFKA_ENABLE_IDEMPOTENCE")
                 .to_lowercase() == "true";
 
             let mut config = ClientConfig::new();
@@ -251,7 +251,7 @@ impl ChunkEventPublisher {
             let mut last_err = None;
             for attempt in 1..=max_publish_attempts {
                 let dlq = std::env::var("KAFKA_DLQ_TOPIC").ok();
-                match producer.publish_with_retry(Topics::CHUNKS_RAW, &event, 2, dlq.as_deref()).await {
+                match producer.publish_with_retry(&Topics::chunks_raw(), &event, 2, dlq.as_deref()).await {
                     Ok(()) => {
                         info!("Published chunk raw event for source: {}", source_id);
                         return Ok(());
