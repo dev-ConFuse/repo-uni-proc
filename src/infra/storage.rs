@@ -1599,8 +1599,7 @@ pub async fn create_falkordb_storage(
 ) -> Result<Arc<FalkordbStorage>> {
     // Construct standard redis:// or rediss:// connection URL
     // We forcibly use `redis` (plaintext) because the FalkorDB cloud instance on port 50860
-    // does not use TLS, but Render's dashboard might still have FALKORDB_USE_TLS=true,
-    // which would cause a TLS handshake timeout.
+    // does not use TLS; a stale FALKORDB_USE_TLS=true would cause a TLS handshake timeout.
     let scheme = "redis";
     let auth = if username.is_empty() && password.is_empty() {
         "".to_string()
@@ -1620,14 +1619,13 @@ pub async fn create_falkordb_storage(
     let manager = RedisConnectionManager::new(url)
         .context("Failed to configure redis connection")?;
 
-    // Build the pool with increased timeout and size for Render free tier
-    // Free instances spin down after inactivity (50+ second delays), so we need:
-    // 1. Larger pool to handle concurrent requests during spin-up
-    // 2. Longer timeout to accommodate free tier spin-up delays
+    // Build the pool sized for concurrent ingestion bursts:
+    // 1. Larger pool to handle concurrent requests
+    // 2. Generous connection timeout
     // 3. Lazy connections — bb8 does NOT connect at build time
     let pool = Pool::builder()
-        .max_size(32) // Increased from 16 to handle free tier spin-up delays
-        .connection_timeout(std::time::Duration::from_secs(30)) // Increased from 8s to handle free tier spin-up
+        .max_size(32) // concurrent request headroom
+        .connection_timeout(std::time::Duration::from_secs(30))
         .build(manager)
         .await
         .context("Failed to build FalkorDB connection pool")?;
@@ -1635,15 +1633,14 @@ pub async fn create_falkordb_storage(
     let pool = Arc::new(pool);
 
     // ── Smoke-test the connection once so we surface auth / network errors
-    //    at startup rather than on the first real request. We do this with a
-    //    longer timeout to accommodate Render free tier spin-up delays.
+    //    at startup rather than on the first real request.
     match tokio::time::timeout(
-        std::time::Duration::from_secs(60), // Increased from 10s to handle free tier spin-up
+        std::time::Duration::from_secs(60),
         pool.get(),
     ).await {
         Ok(Ok(mut conn)) => {
             match tokio::time::timeout(
-                std::time::Duration::from_secs(15), // Increased from 5s
+                std::time::Duration::from_secs(15),
                 redis::cmd("PING").query_async::<_, String>(&mut *conn),
             ).await {
                 Ok(Ok(pong)) => {

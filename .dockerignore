@@ -1,17 +1,23 @@
-# Unified Processor .dockerignore
-target/
-.env*
-.git/
+# ConFuse .dockerignore — secrets and local state never enter the image.
+# (env files are supplied at runtime: .map.env → AKS ConfigMap, .secret.env → Secret)
+.map.env
+.secret.env
+.env.local
+.env
+.env.*
+*.env
+.git
 .gitignore
-__pycache__/
-.venv/
+node_modules
+target
+dist
+build
+.next
+logs
 *.log
-logs/
-tests/
-docs/
-README.md
-Dockerfile*
-.dockerignore
-rust-toolchain
-.DS_Store
-Thumbs.db
+__pycache__
+.pytest_cache
+.ruff_cache
+.venv
+venv
+artifacts

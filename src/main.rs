@@ -1,9 +1,9 @@
 //! Unified Processor Service - Main Entry Point
 //!
-//! Startup order (critical for Render deployments):
+//! Startup order:
 //!   1. Tracing + config
 //!   2. Kafka health check (fast, required)
-//!   3. ── Bind TCP port ──  ← Render sees the service live immediately
+//!   3. ── Bind TCP port ──  ← container is reachable immediately
 //!   4. FalkorDB pool (lazy – smoke-test capped at 10 s total)
 //!   5. Build processor + middleware
 //!   6. Kafka consumer (background task)
@@ -69,8 +69,8 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // ── Step 1: Bind TCP port FIRST ──────────────────────────────────────────
-    // Render kills a deploy if no port is detected within ~15 minutes.
-    // Binding here guarantees Render sees us as live immediately even if downstream checks retry.
+    // Binding here makes the container reachable immediately even if the
+    // downstream startup checks below take a while and retry.
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(bound_addr = %addr, "TCP listener bound — service accepting connections");
 
@@ -114,31 +114,6 @@ async fn main() -> anyhow::Result<()> {
             }
         });
     }
-
-    // ── Step 5.5: FalkorDB keep-alive (background) ─────────────────────────────
-    // Keep FalkorDB active by pinging it every 4 minutes to prevent free tier spin-down
-    let keepalive_pool = falkordb_storage.get_pool().clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(240)); // 4 minutes
-        loop {
-            interval.tick().await;
-            match keepalive_pool.get().await {
-                Ok(mut conn) => {
-                    match redis::cmd("PING").query_async::<_, String>(&mut *conn).await {
-                        Ok(_) => {
-                            tracing::debug!("FalkorDB keep-alive ping successful");
-                        }
-                        Err(e) => {
-                            tracing::warn!("FalkorDB keep-alive ping failed: {}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("FalkorDB keep-alive connection failed: {}", e);
-                }
-            }
-        }
-    });
 
     // ── Step 6: Router + middleware ──────────────────────────────────────────
     let auth_layer = unified_processor_lib::infra::middleware::AxumAuthLayer::new(

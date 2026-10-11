@@ -12,7 +12,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "unified-processor"
-path = "api/index.rs"
+path = "src/main.rs"
 
 [dependencies]
 # Extracted from confuse-common
