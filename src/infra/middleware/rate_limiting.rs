@@ -169,7 +169,7 @@ fn check_rate_limit(
 ) -> Result<RateLimitInfo, ()> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock is after epoch")
         .as_secs();
 
     let window_start = now - config.window_secs;

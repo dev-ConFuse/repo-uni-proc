@@ -362,7 +362,7 @@ pub struct EmbeddingCreatedPayload {
     /// Embedding vector (array of floats)
     pub embedding: Vec<f32>,
     
-    /// Model name (e.g., "gemini-embedding-2")
+    /// Model name (e.g., "nvidia/nemotron-3-embed-1b")
     pub model: String,
     
     /// Model version
@@ -833,4 +833,3 @@ impl DocumentUpdated {
         }
     }
 }
-

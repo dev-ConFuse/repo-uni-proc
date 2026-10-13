@@ -1478,7 +1478,7 @@ impl FalkordbStorage {
         threshold: f64,
         owner_id: &str,
     ) -> Result<Vec<Value>> {
-        let embedding_str = serde_json::to_string(query_vector).unwrap();
+        let embedding_str = serde_json::to_string(query_vector).expect("query vector serializes");
         let owner_id_esc = owner_id.replace('"', "\\\"");
 
         // FalkorDB db.idx.vector.queryNodes syntax

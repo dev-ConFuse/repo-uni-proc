@@ -62,7 +62,7 @@ pub async fn zero_trust_middleware(mut request: Request, next: Next) -> Response
                 "zt-{}-{}",
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .unwrap()
+                    .expect("system clock is after epoch")
                     .as_millis(),
                 uuid::Uuid::new_v4()
                     .to_string()
@@ -85,7 +85,7 @@ pub async fn zero_trust_middleware(mut request: Request, next: Next) -> Response
             if let Ok(ts) = ts_str.parse::<u64>() {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .unwrap()
+                    .expect("system clock is after epoch")
                     .as_secs();
                 let drift = now.abs_diff(ts);
                 if drift > 300 {
