@@ -2,7 +2,6 @@ pub mod analyzer;
 pub mod metrics;
 pub mod chunking;
 pub mod graph;
-pub mod structure;
 pub mod symbol;
 
 pub use analyzer::{CodeAnalyzer, CodeData, AstSummary, FunctionInfo, ClassInfo, SyntaxError};

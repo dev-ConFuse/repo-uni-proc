@@ -25,12 +25,10 @@ RUN rm -f /etc/apt/sources.list.d/debian.sources && \
     make \
     && rm -rf /var/lib/apt/lists/*
 
-# Use vendored SSL for reliability (reduces system dependencies)
-ENV OPENSSL_NO_VENDOR=1 \
-    OPENSSL_DIR=/usr \
-    OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu \
-    OPENSSL_INCLUDE_DIR=/usr/include/openssl \
-    CARGO_NET_RETRY=10 \
+# openssl-sys locates the system OpenSSL via pkg-config (libssl-dev is
+# installed above); the previous hard-coded aarch64 OPENSSL_LIB_DIR broke
+# x86_64 builds
+ENV CARGO_NET_RETRY=10 \
     CARGO_NET_TIMEOUT=120
 
 WORKDIR /app
@@ -43,12 +41,11 @@ COPY Cargo.toml Cargo.lock* ./
 # Build a minimal stub that mirrors the actual lib.rs module layout so cargo
 # can compile all crate dependencies without the real source files.
 RUN mkdir -p \
-        api \
         src/core \
         src/processors \
         src/infra \
         src/graph && \
-    echo 'fn main() {}' > api/index.rs && \
+    echo 'fn main() {}' > src/main.rs && \
     printf 'pub mod core;\npub mod processors;\npub mod infra;\npub mod graph;\n' > src/lib.rs && \
     touch \
         src/core/mod.rs \
@@ -64,11 +61,10 @@ RUN cargo build --release 2>/dev/null; \
 # ---------------------------------------------------------------------------
 # Real build
 # ---------------------------------------------------------------------------
-RUN rm -rf src/* api/*
+RUN rm -rf src/*
 COPY src/ ./src/
-COPY api/ ./api/
 
-RUN cargo build --release --features kafka
+RUN find src -type f -exec touch {} + && cargo build --release --features kafka
 
 # ==============================================================================
 # Stage 2: Runtime image (Lightweight native Rust)
