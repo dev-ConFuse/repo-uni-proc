@@ -12,8 +12,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
 use unified_processor_lib::{
     core::routes::build_app_router,
     core::Config,
@@ -30,22 +28,13 @@ async fn main() -> anyhow::Result<()> {
     }));
 
     // ── Environment variables ────────────────────────────────────────────────
-    tracing::info!("Loading environment variables...");
     dotenvy::from_filename_override(".map.env").ok();
     dotenvy::from_filename_override(".secret.env").ok();
     dotenvy::from_filename_override(".env.local").ok();
-    tracing::info!("Environment variables loaded");
 
-    // ── Tracing ─────────────────────────────────────────────────────────────
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "info,unified_processor_lib=info,unified_processor=info,tower_http=warn".into()))
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_writer(std::io::stdout)
-                .json()
-        )
-        .init();
+    // ── Tracing (structured; LOG_LEVEL / LOG_FORMAT from env) ────────────────
+    unified_processor_lib::graph::correlation::init_tracing();
+    tracing::info!(service = "repo-uni-proc", "Environment variables loaded");
 
     // ── Config ───────────────────────────────────────────────────────────────
     // Fail fast when required env config is missing — values live in
