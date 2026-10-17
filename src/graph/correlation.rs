@@ -10,7 +10,7 @@
 use std::time::Instant;
 
 use axum::{extract::Request, middleware::Next, response::Response};
-use tracing::{error, info, warn, Instrument};
+use tracing::{debug, error, info, warn, Instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
@@ -91,12 +91,13 @@ pub async fn correlation_middleware(mut request: Request, next: Next) -> Respons
 
     let method = request.method().to_string();
     let path = request.uri().path().to_string();
-    let query = sanitize_query(request.uri().query());
+    let query = sanitize_query(request.uri().query()).unwrap_or_default();
     let user_agent = request
         .headers()
         .get("user-agent")
         .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string());
+        .unwrap_or_default()
+        .to_string();
 
     let span = tracing::info_span!(
         "request",
@@ -106,7 +107,16 @@ pub async fn correlation_middleware(mut request: Request, next: Next) -> Respons
     );
 
     let start = Instant::now();
-    info!(query = ?query, user_agent = ?user_agent, "request started");
+    // Access-record fields are attached explicitly (not only via the span) so
+    // every record is self-contained per the observability contract.
+    debug!(
+        correlation_id = %correlation_id,
+        method = %method,
+        path = %path,
+        query = %query,
+        user_agent = %user_agent,
+        "request started"
+    );
     let mut response = next.run(request).instrument(span).await;
     let duration_ms = start.elapsed().as_millis() as u64;
     let status = response.status().as_u16();
@@ -115,17 +125,57 @@ pub async fn correlation_middleware(mut request: Request, next: Next) -> Respons
         response.headers_mut().insert(CORRELATION_HEADER, val);
     }
 
+    let location = response
+        .headers()
+        .get("location")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
     match status {
-        200..=299 => info!(status, duration_ms, outcome = "success", "request completed"),
+        200..=299 => info!(
+            correlation_id = %correlation_id,
+            method = %method,
+            path = %path,
+            query = %query,
+            user_agent = %user_agent,
+            status,
+            duration_ms,
+            outcome = "success",
+            "request completed"
+        ),
         300..=399 => warn!(
+            correlation_id = %correlation_id,
+            method = %method,
+            path = %path,
+            query = %query,
+            user_agent = %user_agent,
             status,
             duration_ms,
             outcome = "redirect",
-            location = ?response.headers().get("location"),
+            location = %location,
             "request redirected"
         ),
-        400..=499 => warn!(status, duration_ms, outcome = "client_error", "request failed"),
-        _ => error!(status, duration_ms, outcome = "server_error", "request failed"),
+        400..=499 => warn!(
+            correlation_id = %correlation_id,
+            method = %method,
+            path = %path,
+            query = %query,
+            user_agent = %user_agent,
+            status,
+            duration_ms,
+            outcome = "client_error",
+            "request failed"
+        ),
+        _ => error!(
+            correlation_id = %correlation_id,
+            method = %method,
+            path = %path,
+            query = %query,
+            user_agent = %user_agent,
+            status,
+            duration_ms,
+            outcome = "server_error",
+            "request failed"
+        ),
     }
 
     response
